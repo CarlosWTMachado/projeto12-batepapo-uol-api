@@ -72,6 +72,19 @@ server.post('/messages', (req, res) => {
 	});
 });
 
+server.get('/messages', (req, res) => {
+	const {limit} = req.query
+	if(!limit){
+		const promise = db.collection("mensagens").find({}).toArray();
+		promise.then(messages => res.send(messages));
+		promise.catch(e => console.log(e));
+	}else{
+		const promise = db.collection("mensagens").find({}).toArray();
+		promise.then(messages => res.send(messages.reverse().slice(0, limit)));
+		promise.catch(e => console.log(e));
+	}
+});
+
 server.listen(5000, () => {
 	console.log("Rodando em http://localhost:5000");
 });
