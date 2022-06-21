@@ -2,6 +2,7 @@ import express, { json } from 'express';
 import cors from 'cors';
 import dotenv from "dotenv";
 import {MongoClient} from "mongodb";
+import dayjs from 'dayjs';
 
 const server = express();
 server.use(cors());
@@ -15,49 +16,31 @@ const mongoClient = new MongoClient(process.env.MONGO_URI);
 const promise = mongoClient.connect();
 promise.then(() => db = mongoClient.db("bate-papo-uol"));
 
-const participante = [
-	{
-		name: 'João', 
-		lastStatus: 12313123
-	}
-];
-
-const mensagem = [
-	{
-		from: 'João', 
-		to: 'Todos', 
-		text: 'oi galera', 
-		type: 'message', 
-		time: '20:04:37'
-	}
-];
-
 server.post('/participants', (req, res) => {
 	const { name } = req.body;
 	if(!name) return res.sendStatus(422);
-	res.send(!name);
-	/*
-	const receitaExistente = receitas.find(value => {return value.titulo === titulo});
-	if(!receitaExistente){
-		if(!titulo || !ingredientes || !preparo){
-			res.status(422).send("Todos os campos são obrigatórios");
-			return;
-		}else{
-			receitas.push({
-				id: receitas.length+1,
-				titulo: titulo,
-				ingredientes: ingredientes,
-				preparo: preparo,
-				views: 0,
+	const promise_find = db.collection("participantes").findOne({name: name});
+	promise_find.then(participante => {
+		if(!participante){
+			const promise_inserir = db.collection("participantes").insertOne({
+				name: name, 
+				lastStatus: Date.now()
 			});
-			res.status(201).send("Criado");
-			return;
+			promise_inserir.then(() => {
+				const promise_mensagem = db.collection("mensagens").insertOne({
+					from: name,
+					to: 'Todos', 
+					text: 'entra na sala...', 
+					type: 'status', 
+					time: dayjs().format('HH:mm:ss')
+				});
+				promise_mensagem.then(() => res.sendStatus(201));
+				promise_mensagem.catch(e => console.log("deu erro pra inserir a mensagem"));
+			});
+			promise_inserir.catch(e => console.log("deu erro pra inserir o participante"));
 		}
-	}else{
-		res.status(409).send("Receita já existente");
-		return;
-	}
-	*/
+		else return res.sendStatus(409);
+	});
 });
 
 server.listen(5000, () => {
