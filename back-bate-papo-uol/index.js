@@ -100,6 +100,26 @@ server.post('/status', (req, res) => {
 	});
 });
 
+setInterval(() => {
+	const tempo_atual = Date.now();
+	const promise = db.collection("participantes").find({}).toArray();
+	promise.then(participantes => {
+		const participantes_inativos = participantes.filter((participante) => (tempo_atual - participante.lastStatus) > 10000);
+		participantes_inativos.forEach((participante) => {
+			const promise_mensagem = db.collection("mensagens").insertOne({
+				from: participante.name,
+				to: "Todos", 
+				text: 'sai da sala...', 
+				type: 'status', 
+				time: dayjs().format('HH:mm:ss')
+			});
+			promise_mensagem.then(() => console.log("enviado"));
+			promise_mensagem.catch(e => console.log("deu erro pra enviar a mensagem"));
+			db.collection("participantes").deleteOne({name: participante.name});
+		});
+	});
+}, 15000);
+
 server.listen(5000, () => {
 	console.log("Rodando em http://localhost:5000");
 });
