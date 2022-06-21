@@ -73,16 +73,17 @@ server.post('/messages', (req, res) => {
 });
 
 server.get('/messages', (req, res) => {
-	const {limit} = req.query
-	if(!limit){
-		const promise = db.collection("mensagens").find({}).toArray();
-		promise.then(messages => res.send(messages));
-		promise.catch(e => console.log(e));
-	}else{
-		const promise = db.collection("mensagens").find({}).toArray();
-		promise.then(messages => res.send(messages.reverse().slice(0, limit)));
-		promise.catch(e => console.log(e));
-	}
+	const { limit } = req.query;
+	const { user } = req.headers;
+
+	if(!user) return res.status(422).send("Envie um usuario valido");
+
+	const promise = db.collection("mensagens").find({}).toArray();
+	promise.then(messages => {
+		const mensagens_permitidas = messages.filter(value => value.from === user || value.to === user || value.to === "Todos" || value.type === "messages");
+		res.send((!limit) ? (mensagens_permitidas.reverse()) : (mensagens_permitidas.reverse().slice(0, limit)));
+	});
+	promise.catch(e => console.log(e));
 });
 
 server.listen(5000, () => {
