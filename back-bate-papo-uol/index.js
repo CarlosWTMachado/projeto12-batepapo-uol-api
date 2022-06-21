@@ -57,7 +57,7 @@ server.post('/messages', (req, res) => {
 	if(type !== 'message' && type !== 'private_message') return res.status(422).send("type deve ser 'message' ou 'private_message'");
 	const promise_find = db.collection("participantes").findOne({name: user});
 	promise_find.then(participante => {
-		if(!participante) return res.status(422).send("usuario nao cadastrado");
+		if(!participante) return res.status(404).send("usuario nao cadastrado");
 		else{
 			const promise_mensagem = db.collection("mensagens").insertOne({
 				from: user,
@@ -84,6 +84,20 @@ server.get('/messages', (req, res) => {
 		res.send((!limit) ? (mensagens_permitidas.reverse()) : (mensagens_permitidas.reverse().slice(0, limit)));
 	});
 	promise.catch(e => console.log(e));
+});
+
+server.post('/status', (req, res) => {
+	const { user } = req.headers;
+	if(!user) return res.status(422).send("Envie um usuario valido");
+	const promise_find = db.collection("participantes").findOne({name: user});
+	promise_find.then(participante => {
+		if(!participante) return res.status(404).send("usuario nao cadastrado");
+		else{
+			const promise_status = db.collection("participantes").updateOne({name: user}, {$set: {lastStatus: Date.now()}});
+			promise_status.then(() => res.sendStatus(200));
+			promise_status.catch(e => console.log("deu erro pra atualizar o status"));
+		}
+	});
 });
 
 server.listen(5000, () => {
