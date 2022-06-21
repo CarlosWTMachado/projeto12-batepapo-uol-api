@@ -43,6 +43,13 @@ server.post('/participants', (req, res) => {
 	});
 });
 
+
+server.get('/participants', (_, res) => {
+	const promise = db.collection("participantes").find({}).toArray();
+	promise.then(participantes => res.send(participantes));
+	promise.catch(e => console.log(e));
+  });
+
 server.listen(5000, () => {
 	console.log("Rodando em http://localhost:5000");
 });
