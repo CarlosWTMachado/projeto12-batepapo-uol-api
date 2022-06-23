@@ -1,7 +1,7 @@
 import express, { json } from 'express';
 import cors from 'cors';
 import dotenv from "dotenv";
-import {MongoClient} from "mongodb";
+import {MongoClient, ObjectId} from "mongodb";
 import dayjs from 'dayjs';
 import joi from 'joi';
 
@@ -58,7 +58,7 @@ server.post('/participants', async (req, res) => {
 			await sendMessage(name, 'Todos', 'entra na sala...', 'status');
 			res.sendStatus(201);
 		} catch (error) {
-			console.log(error);
+			res.status(500).send(error);
 		}
 	}else return res.sendStatus(409);
 });
@@ -68,7 +68,7 @@ server.get('/participants', async (_, res) => {
 		const participantes = await db.collection("participantes").find({}).toArray();
 		res.status(200).send(participantes);
 	} catch (error) {
-		res.status(408).send(error);
+		res.status(500).send(error);
 	}
 });
 
@@ -88,7 +88,7 @@ server.post('/messages', async (req, res) => {
 		await sendMessage(user, to, text, type);
 		res.sendStatus(201);
 	} catch (error) {
-		res.status(408).send(error);
+		res.status(500).send(error);
 	}
 });
 
@@ -107,7 +107,7 @@ server.get('/messages', async (req, res) => {
 		));
 		res.send((!limit) ? (mensagens_permitidas) : (mensagens_permitidas.slice(-limit)));
 	} catch (error) {
-		res.status(408).send(error);
+		res.status(500).send(error);
 	}
 });
 
@@ -122,7 +122,7 @@ server.post('/status', async (req, res) => {
 		.updateOne({name: user}, {$set: {lastStatus: Date.now()}});
 		res.sendStatus(200);
 	} catch (error) {
-		res.status(408).send(error);
+		res.status(500).send(error);
 	}
 });
 
@@ -131,9 +131,15 @@ server.delete('/messages/:id', async (req, res) => {
 	const validation = participanteSchema.validate({name: user}, { abortEarly: true });
 	if(validation.error) return res.status(422).send("Envie um usuario valido");
 	const id = req.params.id;
-	const mensagem = await db.collection("mensagens").findOne({id});
+	const mensagem = await db.collection("mensagens").findOne({_id: ObjectId(id)});
 	if(!mensagem) return res.sendStatus(404);
-	res.send(mensagem);
+	if(mensagem.from !== user) return res.sendStatus(401);
+	try {
+		await db.collection("mensagens").deleteOne({_id: new ObjectId(id)});
+		res.status(200).send("removido");
+	} catch (error) {
+		res.status(500).send(error);
+	}
 });
 
 setInterval(async () => {
