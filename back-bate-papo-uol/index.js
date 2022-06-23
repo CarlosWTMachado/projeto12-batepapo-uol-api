@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import {MongoClient, ObjectId} from "mongodb";
 import dayjs from 'dayjs';
 import joi from 'joi';
+import { stripHtml } from "string-strip-html";
 
 const server = express();
 server.use(cors());
@@ -11,10 +12,14 @@ server.use(json());
 
 dotenv.config();
 
-let db = null;
+let participantesCollection = null;
+let mensagensCollection = null;
 const mongoClient = new MongoClient(process.env.MONGO_URI);
 const promise = mongoClient.connect();
-promise.then(() => db = mongoClient.db("bate-papo-uol"));
+promise.then(() => {
+	participantesCollection = mongoClient.db("bate-papo-uol").collection("participantes");
+	mensagensCollection = mongoClient.db("bate-papo-uol").collection("mensagens");
+});
 
 const participanteSchema = joi.object({
 	name: joi.string().required(),
@@ -31,7 +36,7 @@ const mensagemSchema = joi.object({
 
 async function sendMessage(from, to, text, type){
 	try{
-		await db.collection("mensagens").insertOne({
+		await mensagensCollection.insertOne({
 			from: from,
 			to: to,
 			text: text,
@@ -39,19 +44,18 @@ async function sendMessage(from, to, text, type){
 			time: dayjs().format('HH:mm:ss')
 		});
 	}catch (error){
-		return error;
+		throw error;
 	}
-	
 }
 
 server.post('/participants', async (req, res) => {
-	const { name } = req.body;
+	const name = stripHtml(req.body.name).result.trim();
 	const validation = participanteSchema.validate({name: name}, { abortEarly: true });
 	if(validation.error) return res.sendStatus(422);
-	const encontrado = await db.collection("participantes").findOne({name: name});
+	const encontrado = await participantesCollection.findOne({name: name});
 	if(!encontrado){
 		try {
-			await db.collection("participantes").insertOne({
+			await participantesCollection.insertOne({
 				name: name, 
 				lastStatus: Date.now()
 			});
@@ -65,7 +69,7 @@ server.post('/participants', async (req, res) => {
 
 server.get('/participants', async (_, res) => {
 	try {
-		const participantes = await db.collection("participantes").find({}).toArray();
+		const participantes = await participantesCollection.find({}).toArray();
 		res.status(200).send(participantes);
 	} catch (error) {
 		res.status(500).send(error);
@@ -73,16 +77,18 @@ server.get('/participants', async (_, res) => {
 });
 
 server.post('/messages', async (req, res) => {
-	const { to, text, type } = req.body;
-	const { user } = req.headers;
+	const to = stripHtml(req.body.to).result.trim();
+	const text = stripHtml(req.body.text).result.trim();
+	const type = stripHtml(req.body.type).result.trim();
+	const user = stripHtml(req.headers.user).result.trim();
 	const validation = mensagemSchema.validate({
 		from: user,
 		to: to,
 		text: text,
 		type: type
 	}, { abortEarly: true });
-	if(validation.error) return res.status(422).send("Todos os campos sao obrigatorios");
-	const encontrado = await db.collection("participantes").findOne({name: user});
+	if(validation.error) return res.sendStatus(422);
+	const encontrado = await participantesCollection.findOne({name: user});
 	if(!encontrado) return res.status(404).send("usuario nao cadastrado");
 	try {
 		await sendMessage(user, to, text, type);
@@ -94,11 +100,11 @@ server.post('/messages', async (req, res) => {
 
 server.get('/messages', async (req, res) => {
 	const { limit } = req.query;
-	const { user } = req.headers;
+	const user = stripHtml(req.headers.user).result.trim();
 	const validation = participanteSchema.validate({name: user}, { abortEarly: true });
 	if(validation.error) return res.sendStatus(422);
 	try {
-		const mensagens = await db.collection("mensagens").find({}).toArray();
+		const mensagens = await mensagensCollection.find({}).toArray();
 		const mensagens_permitidas = mensagens.filter(value => (
 			value.from === user ||
 			value.to === user ||
@@ -112,13 +118,13 @@ server.get('/messages', async (req, res) => {
 });
 
 server.post('/status', async (req, res) => {
-	const { user } = req.headers;
+	const user = stripHtml(req.headers.user).result.trim();
 	const validation = participanteSchema.validate({name: user}, { abortEarly: true });
 	if(validation.error) return res.status(422).send("Envie um usuario valido");
-	const participante = await db.collection("participantes").findOne({name: user});
+	const participante = await participantesCollection.findOne({name: user});
 	if(!participante) return res.status(404).send("usuario nao cadastrado");
 	try {
-		const promise_status = await db.collection("participantes")
+		const promise_status = await participantesCollection
 		.updateOne({name: user}, {$set: {lastStatus: Date.now()}});
 		res.sendStatus(200);
 	} catch (error) {
@@ -127,16 +133,46 @@ server.post('/status', async (req, res) => {
 });
 
 server.delete('/messages/:id', async (req, res) => {
-	const { user } = req.headers;
+	const user = stripHtml(req.headers.user).result.trim();
 	const validation = participanteSchema.validate({name: user}, { abortEarly: true });
 	if(validation.error) return res.status(422).send("Envie um usuario valido");
-	const id = req.params.id;
-	const mensagem = await db.collection("mensagens").findOne({_id: ObjectId(id)});
+	const { id } = req.params;
+	const mensagem = await mensagensCollection.findOne({_id: ObjectId(id)});
 	if(!mensagem) return res.sendStatus(404);
 	if(mensagem.from !== user) return res.sendStatus(401);
 	try {
-		await db.collection("mensagens").deleteOne({_id: new ObjectId(id)});
+		await mensagensCollection.deleteOne({_id: new ObjectId(id)});
 		res.status(200).send("removido");
+	} catch (error) {
+		res.status(500).send(error);
+	}
+});
+
+server.put('/messages/:id', async (req, res) => {
+	const { id } = req.params;
+	const user = stripHtml(req.headers.user).result.trim();
+	const to = stripHtml(req.body.to).result.trim();
+	const text = stripHtml(req.body.text).result.trim();
+	const type = stripHtml(req.body.type).result.trim();
+	const validation = mensagemSchema.validate({
+		from: user,
+		to: to,
+		text: text,
+		type: type
+	}, { abortEarly: true });
+	if(validation.error) return res.status(422).send("Todos os campos sao obrigatorios");
+	const mensagem = await mensagensCollection.findOne({_id: ObjectId(id)});
+	if(!mensagem) return res.sendStatus(404);
+	if(mensagem.from !== user) return res.sendStatus(401);
+	try {
+		await mensagensCollection
+		.updateOne({_id: new ObjectId(id)}, {$set: {
+			to: to,
+			text: text,
+			type: type,
+			time: dayjs().format('HH:mm:ss')
+		}});
+		res.status(200).send("modificado");
 	} catch (error) {
 		res.status(500).send(error);
 	}
@@ -144,20 +180,20 @@ server.delete('/messages/:id', async (req, res) => {
 
 setInterval(async () => {
 	const tempo_atual = Date.now();
-	const participantes = await db.collection("participantes").find({}).toArray();
+	const participantes = await participantesCollection.find({}).toArray();
 	const participantes_inativos = participantes.filter(
 		(participante) => (tempo_atual - participante.lastStatus) > 10000
 	);
 	participantes_inativos.forEach(async (participante) => {
 		try {
 			await sendMessage(participante.name, 'Todos', 'sai da sala...', 'status');
-			await db.collection("participantes").deleteOne({name: participante.name});
+			await participantesCollection.deleteOne({name: participante.name});
 			console.log("removido");
 		} catch (error) {
 			console.log(error);
 		}
 	});
-}, 15000);
+}, 150000);
 
 server.listen(5000, () => {
 	console.log("Rodando em http://localhost:5000");
